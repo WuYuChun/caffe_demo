@@ -1,0 +1,2 @@
+# caffe_demo
+使用caffe框架来实现各种cnn网络结构的例子，包括faster_cnn等
