@@ -1,7 +1,7 @@
-#include "semantic_division.h"
+#include "vgg16.h"
 
 
-Classifier::Classifier(const string& model_file,const string& trained_file,const string& mean_file,const string& label_file) {
+Classifier::Classifier(const string& model_file,const string& trained_file,const string& label_file) {
 #ifdef CPU_ONLY
   Caffe::set_mode(Caffe::CPU);
 #else
@@ -22,9 +22,6 @@ Classifier::Classifier(const string& model_file,const string& trained_file,const
     << "Input layer should have 1 or 3 channels.";
   input_geometry_ = cv::Size(input_layer->width(), input_layer->height());
 
-  /* Load the binaryproto mean file. */
-  SetMean(mean_file);
-
   /* Load labels. */
   std::ifstream labels(label_file.c_str());
   CHECK(labels) << "Unable to open labels file " << label_file;
@@ -35,6 +32,39 @@ Classifier::Classifier(const string& model_file,const string& trained_file,const
   Blob<float>* output_layer = net_->output_blobs()[0];
   CHECK_EQ(labels_.size(), output_layer->channels())
     << "Number of labels is different from the output layer dimension.";
+}
+
+
+
+Classifier::Classifier(const string& model_file,const string& trained_file) {
+#ifdef CPU_ONLY
+  Caffe::set_mode(Caffe::CPU);
+#else
+  Caffe::set_mode(Caffe::GPU);
+#endif
+
+  /* Load the network. */
+  net_.reset(new Net<float>(model_file, TEST));
+  
+  net_->CopyTrainedLayersFrom(trained_file);
+
+  CHECK_EQ(net_->num_inputs(), 1) << "Network should have exactly one input.";
+  CHECK_EQ(net_->num_outputs(), 5) << "Network should have exactly fine output.";
+
+  Blob<float>* input_layer = net_->input_blobs()[0];
+  num_channels_ = input_layer->channels();
+  CHECK(num_channels_ == 3 || num_channels_ == 1)
+    << "Input layer should have 1 or 3 channels.";
+  input_geometry_ = cv::Size(input_layer->width(), input_layer->height());
+
+  std::cout << "-------debug:  w: "  << input_layer->width() << "  h: " << input_layer->height() 
+            << "  c: " << input_layer->channels() << std::endl;
+
+  Blob<float>* output_layer = net_->output_blobs()[0];
+  std::cout << "----------------: " << output_layer->channels() << "  " << output_layer->count() << std::endl;
+  std::cout << "----------------:  " << output_layer->height() << std::endl;
+  // CHECK_EQ(labels_.size(), output_layer->channels())
+  //   << "Number of labels is different from the output layer dimension.";
 }
 
 static bool PairCompare(const std::pair<float, int>& lhs,
@@ -59,49 +89,66 @@ static std::vector<int> Argmax(const std::vector<float>& v, int N) {
 std::vector<Prediction> Classifier::Classify(const cv::Mat& img, int N) {
   std::vector<float> output = Predict(img);
 
+#if 1
   N = std::min<int>(labels_.size(), N);
   std::vector<int> maxN = Argmax(output, N);
   std::vector<Prediction> predictions;
   for (int i = 0; i < N; ++i) {
     int idx = maxN[i];
     predictions.push_back(std::make_pair(labels_[idx], output[idx]));
-  }
-
+  }  
   return predictions;
+ #else 
+  std::vector<Prediction> predictions;
+  return  predictions;
+#endif  
 }
 
-/* Load the mean file in binaryproto format. */
-void Classifier::SetMean(const string& mean_file) {
-  BlobProto blob_proto;
-  ReadProtoFromBinaryFileOrDie(mean_file.c_str(), &blob_proto);
 
-  /* Convert from BlobProto to Blob<float> */
-  Blob<float> mean_blob;
-  mean_blob.FromProto(blob_proto);
-  CHECK_EQ(mean_blob.channels(), num_channels_)
-    << "Number of channels of mean file doesn't match input layer.";
+/* Return the top N predictions. */
+void Classifier::Classify_psd(const cv::Mat& img ) {
+  std::cout << "xxxxxxxxxxxxxxxxxxxxxxxx\n";
+  std::vector<float> output = Predict(img);
+}
 
-  /* The format of the mean file is planar 32-bit float BGR or grayscale. */
-  std::vector<cv::Mat> channels;
-  float* data = mean_blob.mutable_cpu_data();
-  for (int i = 0; i < num_channels_; ++i) {
-    /* Extract an individual channel. */
-    cv::Mat channel(mean_blob.height(), mean_blob.width(), CV_32FC1, data);
-    channels.push_back(channel);
-    data += mean_blob.height() * mean_blob.width();
+
+std::vector<float> Classifier::Classify(float *input_data){
+
+  Blob<float>* input_layer = net_->input_blobs()[0];
+  input_layer->Reshape(1, num_channels_,
+                       input_geometry_.height, input_geometry_.width);
+
+  std::cout << "input_geometry_.height: " << input_geometry_.height << "  input_geometry_.width: " << input_geometry_.width << std::endl;                     
+  /* Forward dimension change to all layers. */
+  net_->Reshape();
+
+  float *layer_input_value = input_layer->mutable_cpu_data();
+  memcpy(layer_input_value, input_data, sizeof(float)*1*3*720*1280);
+
+  std::cout << "-----------layer_input_data:  " << std::endl;
+  for (size_t i = 0; i < 6; i++){
+    std::cout << layer_input_value[i] << std::endl;
   }
+  
 
-  /* Merge the separate channels into a single image. */
-  cv::Mat mean;
-  cv::merge(channels, mean);
+  net_->Forward();
 
-  /* Compute the global mean pixel value and create a mean image
-   * filled with this value. */
-  cv::Scalar channel_mean = cv::mean(mean);
-  mean_ = cv::Mat(input_geometry_, mean.type(), channel_mean);
+  /* Copy the output layer to a std::vector */
+   Blob<float>* output_layer = net_->output_blobs()[0];
+
+  std::cout << "Shape: ";
+  std::cout <<  output_layer->channels() << "  " << output_layer->width() << " " << output_layer->height() << std::endl;
+  const float* begin = output_layer->cpu_data();
+  const float* end = begin + output_layer->channels()*output_layer->width()*output_layer->height();
+  return std::vector<float>(begin, end);
+
 }
 
 std::vector<float> Classifier::Predict(const cv::Mat& img) {
+
+  std::cout << "xxxxxxxxxxxxxxxxxxx\n";
+
+
   Blob<float>* input_layer = net_->input_blobs()[0];
   input_layer->Reshape(1, num_channels_,
                        input_geometry_.height, input_geometry_.width);
@@ -116,10 +163,15 @@ std::vector<float> Classifier::Predict(const cv::Mat& img) {
   net_->Forward();
 
   /* Copy the output layer to a std::vector */
-  Blob<float>* output_layer = net_->output_blobs()[0];
-  const float* begin = output_layer->cpu_data();
-  const float* end = begin + output_layer->channels();
-  return std::vector<float>(begin, end);
+
+  //Blob<float>* output_layer = net_->output_blobs()[0];
+  // const float* begin = output_layer->cpu_data();
+  // const float* end = begin + output_layer->channels();
+  // return std::vector<float>(begin, end);
+
+  std::vector<float> tmp;
+  return tmp;
+  
 }
 
 /* Wrap the input layer of the network in separate cv::Mat objects
@@ -167,13 +219,13 @@ void Classifier::Preprocess(const cv::Mat& img,
   else
     sample_resized.convertTo(sample_float, CV_32FC1);
 
-  cv::Mat sample_normalized;
-  cv::subtract(sample_float, mean_, sample_normalized);
+  //cv::Mat sample_normalized;
+  //cv::subtract(sample_float, mean_, sample_normalized);
 
   /* This operation will write the separate BGR planes directly to the
    * input layer of the network because it is wrapped by the cv::Mat
    * objects in input_channels. */
-  cv::split(sample_normalized, *input_channels);
+  cv::split(sample_float, *input_channels);
 
   CHECK(reinterpret_cast<float*>(input_channels->at(0).data)
         == net_->input_blobs()[0]->cpu_data())

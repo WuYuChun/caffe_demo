@@ -1,5 +1,5 @@
-#ifndef SEMANTIC_DIVISION
-#define SEMANTIC_DIVISION
+#ifndef VGG16_H_
+#define VGG16_H_
 
 #include <caffe/caffe.hpp>
 
@@ -22,15 +22,17 @@ typedef std::pair<string, float> Prediction;
 
 class Classifier {
  public:
-  Classifier(const string& model_file,
-             const string& trained_file,
-             const string& mean_file,
-             const string& label_file);
+  Classifier(const string& model_file,const string& trained_file,const string& label_file);
+
+  Classifier(const string& model_file,const string& trained_file);
 
   std::vector<Prediction> Classify(const cv::Mat& img, int N = 5);
 
+  void Classify_psd(const cv::Mat& img);
+
+  std::vector<float> Classify(float *input);
+
  private:
-  void SetMean(const string& mean_file);
 
   std::vector<float> Predict(const cv::Mat& img);
 
@@ -43,7 +45,6 @@ class Classifier {
   shared_ptr<Net<float> > net_;
   cv::Size input_geometry_;
   int num_channels_;
-  cv::Mat mean_;
   std::vector<string> labels_;
 };
 
