@@ -28,8 +28,6 @@ class Classifier {
 
   std::vector<Prediction> Classify(const cv::Mat& img, int N = 5);
 
-  void Classify_psd(const cv::Mat& img);
-
   std::vector<float> Classify(float *input);
 
  private:

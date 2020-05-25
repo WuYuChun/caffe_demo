@@ -105,13 +105,6 @@ std::vector<Prediction> Classifier::Classify(const cv::Mat& img, int N) {
 }
 
 
-/* Return the top N predictions. */
-void Classifier::Classify_psd(const cv::Mat& img ) {
-  std::cout << "xxxxxxxxxxxxxxxxxxxxxxxx\n";
-  std::vector<float> output = Predict(img);
-}
-
-
 std::vector<float> Classifier::Classify(float *input_data){
 
   Blob<float>* input_layer = net_->input_blobs()[0];
@@ -146,9 +139,7 @@ std::vector<float> Classifier::Classify(float *input_data){
 
 std::vector<float> Classifier::Predict(const cv::Mat& img) {
 
-  std::cout << "xxxxxxxxxxxxxxxxxxx\n";
-
-
+  
   Blob<float>* input_layer = net_->input_blobs()[0];
   input_layer->Reshape(1, num_channels_,
                        input_geometry_.height, input_geometry_.width);
@@ -164,13 +155,11 @@ std::vector<float> Classifier::Predict(const cv::Mat& img) {
 
   /* Copy the output layer to a std::vector */
 
-  //Blob<float>* output_layer = net_->output_blobs()[0];
-  // const float* begin = output_layer->cpu_data();
-  // const float* end = begin + output_layer->channels();
-  // return std::vector<float>(begin, end);
+  Blob<float>* output_layer = net_->output_blobs()[0];
+  const float* begin = output_layer->cpu_data();
+  const float* end = begin + output_layer->channels();
+  return std::vector<float>(begin, end);
 
-  std::vector<float> tmp;
-  return tmp;
   
 }
 
